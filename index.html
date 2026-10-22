@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pit · neck · upper room — acoustic evaluator</title>
+<style>
+  :root {
+    --page: #07080b;
+    --glass: rgba(16, 18, 23, 0.82);
+    --line: rgba(255, 255, 255, 0.08);
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --ink-3: #8b8a83;
+    --accent: #ffb066;
+    --series: #6da7ec;
+    --good: #0ca30c;
+    --warn: #fab219;
+    --bad: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--page); color: var(--ink); overflow: hidden;
+    font: 13px/1.45 "Inter", "Segoe UI", system-ui, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  .labels { position: absolute; inset: 0; pointer-events: none; }
+  aside, #timeline { position: fixed; background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 10px; }
+  aside { top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; padding: 14px 16px; scrollbar-width: thin; }
+  #metrics { left: 16px; width: 300px; }
+  #controls { right: 16px; width: 280px; }
+  #timeline { left: 332px; right: 312px; bottom: 16px; padding: 10px 14px 12px; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-3); margin: 0 0 6px; }
+  section { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+  .small { color: var(--ink-3); font-size: 12px; margin: 2px 0 0; }
+  dl { display: grid; grid-template-columns: 12px 1fr auto; gap: 3px 6px; margin: 0; align-items: center; }
+  dt { color: var(--ink-2); }
+  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.pass { background: var(--good); }
+  .dot.border { background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--warn); }
+  .dot.fail { box-shadow: inset 0 0 0 2px var(--bad); }
+  .dot.info { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+  .legend-dots { display: flex; gap: 10px; color: var(--ink-3); font-size: 11px; margin-top: 8px; flex-wrap: wrap; }
+  .legend-dots span { display: inline-flex; gap: 4px; align-items: center; }
+  .seg { display: flex; gap: 2px; background: rgba(255,255,255,.04); border-radius: 7px; padding: 2px; margin-bottom: 8px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--ink-2); padding: 6px 4px; border-radius: 5px;
+    font: inherit; font-size: 12px; cursor: pointer; line-height: 1.25; }
+  .seg button:hover:not(:disabled) { color: var(--ink); }
+  .seg button.on { background: rgba(255,255,255,.12); color: var(--ink); }
+  .seg button:disabled { color: #4a4a46; cursor: not-allowed; text-decoration: line-through; }
+  .seg button small { display: block; color: var(--ink-3); font-size: 10.5px; }
+  button.primary { width: 100%; border: 0; border-radius: 7px; padding: 8px; font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #1a1208; margin: 4px 0; }
+  .plain { border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--ink-2); border-radius: 6px;
+    padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .plain:hover { color: var(--ink); }
+  label.toggle { display: flex; align-items: center; gap: 8px; color: var(--ink-2); cursor: pointer; margin: 4px 0; }
+  .note { color: var(--ink-3); font-size: 11.5px; margin: 6px 0 0; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+  .card.sel { border-color: rgba(255,176,102,.55); }
+  .card .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .card .head b { font-weight: 600; }
+  .card .now { font-variant-numeric: tabular-nums; color: var(--ink); }
+  .card canvas { width: 100%; height: 64px; display: block; margin: 4px 0; }
+  .card .final { font-size: 11.5px; color: var(--ink-2); min-height: 32px; font-variant-numeric: tabular-nums; }
+  .bar { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  .track { position: relative; flex: 1; height: 34px; }
+  .track .slow { position: absolute; top: 6px; height: 6px; left: 0; border-radius: 3px; background: rgba(109,167,236,.25); }
+  .track .rail { position: absolute; top: 8px; height: 2px; left: 0; right: 0; background: rgba(255,255,255,.12); }
+  .track .done { position: absolute; top: 8px; height: 2px; left: 0; background: var(--accent); }
+  .track .tick { position: absolute; top: 14px; transform: translateX(-50%); font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+  .track .tick::before { content: ""; position: absolute; left: 50%; top: -6px; width: 1px; height: 4px; background: var(--ink-3); }
+  .track input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+  .track.live .tick, .track.live .slow, .track.live input { display: none; }
+  .clock { min-width: 120px; text-align: right; font-variant-numeric: tabular-nums; }
+  .clock b { font-size: 15px; }
+  #badge { position: absolute; top: -26px; left: 0; right: 0; text-align: center; color: var(--ink-3); font-size: 11px; letter-spacing: .04em; }
+  .marker-label { color: var(--ink-2); font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(10,11,14,.72);
+    transform: translateY(-16px); white-space: nowrap; pointer-events: auto; cursor: pointer; }
+  .marker-label.sel { color: var(--ink); background: rgba(255,176,102,.28); }
+  .marker-label.src { color: var(--accent); pointer-events: none; }
+  .marker-label.dim { opacity: .4; }
+  details.glossary { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+  details.glossary summary { cursor: pointer; color: var(--ink-2); font-size: 12px; }
+  dl.gl { display: block; margin-top: 6px; }
+  dl.gl dt { color: var(--ink); font-weight: 600; font-size: 12px; margin-top: 6px; }
+  dl.gl dd { text-align: left; color: var(--ink-2); font-size: 12px; font-variant-numeric: normal; }
+  #viewbar { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; align-items: center;
+    color: var(--ink-3); font-size: 11.5px; background: var(--glass); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  #viewbar .plain { padding: 2px 8px; }
+  #loading { position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); color: var(--ink-3); }
+</style>
+<script>
+  // Always load the latest manifest; the other data files are versioned by its build stamp.
+  document.write('<script src="data/manifest.js?v=' + Date.now() + '"><\/script>');
+</script>
+<script type="importmap">
+{ "imports": {
+    "three": "./lib/three.module.js",
+    "three/addons/controls/": "./lib/addons/",
+    "three/addons/renderers/": "./lib/addons/"
+} }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="loading">Loading…</div>
+<div id="viewbar">
+  <span>Drag to rotate · right-drag or Shift+drag to pan · scroll to zoom</span>
+  <button class="plain" data-view="reset">Reset</button>
+  <button class="plain" data-view="top">Top</button>
+  <button class="plain" data-view="section">Section</button>
+</div>
+
+<aside id="metrics">
+  <h1>Pit · neck · upper room</h1>
+  <p class="small" id="run-info"></p>
+  <section><h2>Reverb and smearing</h2><dl id="m-rev"></dl></section>
+  <section><h2>Quiet zone below the neck (L2)</h2><dl id="m-quiet"></dl></section>
+  <section><h2>Form and cost</h2><dl id="m-cost"></dl></section>
+  <div class="legend-dots">
+    <span><i class="dot pass"></i>meets target</span><span><i class="dot border"></i>close</span>
+    <span><i class="dot fail"></i>misses</span><span><i class="dot info"></i>no target (for information)</span>
+  </div>
+  <p class="note" id="target-note"></p>
+  <p class="note">Pachyderm ray tracing, 500 Hz–1 kHz average, unless marked bass (wave simulation). Lengths in feet.
+    Hover a row for its target.</p>
+  <details class="glossary">
+    <summary>Glossary</summary>
+    <dl class="gl">
+      <dt>RT (T30)</dt><dd>Reverberation time: how long a sound takes to fade away (by 60 dB) after it stops. Longer means more reverberant. Piano 1.5–2.4 s, installation 3–4 s.</dd>
+      <dt>EDT</dt><dd>Early decay time: the same idea, but from only the first part of the fade. It's what you perceive as reverberance while music is playing. Ideally close to the RT.</dd>
+      <dt>C80 (worst)</dt><dd>Clarity: the sound arriving in the first 80 ms versus everything after, in dB. Higher means notes stay distinct; lower means they blend. "Worst" is the lower of the two pit listeners (L1, L2). Piano: −3 dB or higher.</dd>
+      <dt>Double slope</dt><dd>How much slower the late decay is than the early decay. 1.3× or more is an audible "bloom" from the upper room.</dd>
+      <dt>Bass ratio</dt><dd>Reverb at 125 Hz divided by reverb at 500 Hz. 1.0–1.2 is balanced; higher means the bass booms on longer than the mids.</dd>
+      <dt>L2 deepest drop</dt><dd>How much quieter L2 is than the rest of the pit in its quietest bass band (wave simulation). This is the quiet zone below the neck.</dd>
+    </dl>
+  </details>
+</aside>
+
+<aside id="controls">
+  <h2>Pit height</h2><div class="seg" id="seg-H"></div>
+  <h2>Lime plaster finish</h2><div class="seg" id="seg-F"></div>
+  <h2>Curtain band</h2><div class="seg" id="seg-A"></div>
+  <p class="note">Crossed-out options haven't been simulated yet.</p>
+  <section>
+    <h2>Source</h2><div class="seg" id="seg-S"></div>
+  </section>
+  <section>
+    <h2>Listen</h2>
+    <div class="seg" id="seg-clip"></div>
+    <div class="seg" id="seg-L"></div>
+    <button class="primary" id="play">▶ Play at L2</button>
+    <label class="toggle"><input type="checkbox" id="dry"> Hear the dry recording (no room)</label>
+    <p class="note">🎧 Headphones recommended. Click a listener in the model to hear it there.</p>
+    <p class="note" id="audio-status"></p>
+  </section>
+</aside>
+
+<div id="timeline">
+  <div class="cards" id="cards"></div>
+  <div class="bar">
+    <button class="plain" id="toggle">❚❚</button>
+    <button class="plain" id="restart">↺</button>
+    <div class="track" id="track">
+      <div class="slow" id="slow"></div><div class="rail"></div><div class="done" id="done"></div>
+      <input type="range" id="scrub" min="0" max="1000" step="1" value="0" aria-label="Time">
+    </div>
+    <div class="clock"><b id="clock-t">0 ms</b><div class="small" id="clock-speed"></div></div>
+  </div>
+  <p class="note" style="margin-top:2px">The energy field is illustrative. Arrival timing and levels at L1–L3 come from the
+    Pachyderm impulse responses. Curves show level in dB, 250 Hz–4 kHz, on one scale shared by all variants.</p>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+const M = window.PACH.manifest;
+const C = M.c, BANDS = M.bands;
+const LIS = Object.keys(M.listeners), SRC = Object.keys(M.sources);
+const $ = id => document.getElementById(id);
+
+// ===================================================================================
+// State and data loading (data files are plain scripts so the site also opens from disk)
+// ===================================================================================
+const available = id => id in M.runs;
+const params = new URLSearchParams(location.search);   // ?run=H3_F3_A1&src=S2&u=0.5 opens a specific view
+const firstRun = available(params.get('run')) ? params.get('run') : available('H2_F1_A0') ? 'H2_F1_A0' : Object.keys(M.runs)[0];
+const [H0, F0, A0] = firstRun.split('_');
+const state = { H: H0, F: F0, A: A0, source: SRC.includes(params.get('src')) ? params.get('src') : 'S1',
+  listener: 'L2', clip: 'piano', dry: false, u: 0, playing: true };
+const runId = (s = state) => `${s.H}_${s.F}_${s.A}`;
+
+const scripts = {};
+function loadScript(src) {
+  scripts[src] ??= new Promise((res, rej) => {
+    const el = document.createElement('script');
+    el.src = src; el.onload = res; el.onerror = () => rej(new Error(`missing ${src}`));
+    document.head.appendChild(el);
+  });
+  return scripts[src];
+}
+const V = `?v=${M.build ?? 0}`;
+const getGeo = async h => (await loadScript(`data/geo_${h}.js${V}`), window.PACH.geo[h]);
+const getRun = async id => (await loadScript(`data/run_${id}.js${V}`), window.PACH.runs[id]);
+const getLow = async h => { try { await loadScript(`data/lowfreq_${h}.js${V}`); return window.PACH.lowfreq[h]; } catch { return null; } };
+
+const bytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const int16 = s => { const u = bytes(s); return new Int16Array(u.buffer); };
+const uint16 = s => { const u = bytes(s); return new Uint16Array(u.buffer); };
+const uint32 = s => { const u = bytes(s); return new Uint32Array(u.buffer); };
+
+// Energy per 5 ms bin for each pair and band.
+function bandEnergy(run) {
+  if (run._e) return run._e;
+  run._e = {};
+  for (const [k, p] of Object.entries(run.pairs)) {
+    run._e[k] = p.bands.map(b => {
+      const q = bytes(b.q), e = new Float32Array(q.length);
+      for (let i = 0; i < q.length; i++) e[i] = q[i] === 255 ? 0 : Math.pow(10, (b.top - q[i] * run.qstep) / 10);
+      return e;
+    });
+  }
+  return run._e;
+}
+// Broadband (250 Hz-4 kHz) energy for one or more pairs, smoothed over 25 ms, in dB.
+function levelDb(run, keys) {
+  const e = bandEnergy(run), n = run.nbins, sum = new Float64Array(n);
+  for (const k of keys) for (let b = 2; b <= 6; b++) { const eb = e[k][b]; for (let i = 0; i < n; i++) sum[i] += eb[i] / keys.length; }
+  const out = new Float32Array(n), w = 2;
+  for (let i = 0; i < n; i++) {
+    let s = 0, c = 0;
+    for (let j = Math.max(0, i - w); j <= Math.min(n - 1, i + w); j++) { s += sum[j]; c++; }
+    out[i] = 10 * Math.log10(s / c + 1e-30);
+  }
+  return out;
+}
+
+// ===================================================================================
+// Clock: first 200 ms in slow motion, then accelerating to the end of the IR
+// ===================================================================================
+const DURATION = 16, US = 0.4, TS = 0.2;
+const tOfU = (u, T) => (u < US ? TS * u / US : TS + (T - TS) * ((u - US) / (1 - US)) ** 2);
+const uOfT = (t, T) => (t < TS ? US * t / TS : US + (1 - US) * Math.sqrt(Math.min(1, (t - TS) / (T - TS))));
+const rate = (u, T) => (u < US ? TS / US : 2 * (T - TS) * (u - US) / (1 - US) ** 2) / DURATION;  // IR seconds per wall second
+const fmtT = t => (t < 1 ? `${Math.round(t * 1000)} ms` : `${t.toFixed(2)} s`);
+
+// ===================================================================================
+// Scene
+// ===================================================================================
+const app = $('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+app.appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.className = 'labels';
+app.appendChild(labelRenderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07080b);
+scene.fog = new THREE.FogExp2(0x07080b, 0.0028);
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.5, 2000);
+camera.position.set(95, 70, 115);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffe7c8, 0.6); sun.position.set(40, 120, 60); scene.add(sun);
+
+// Rhino feet (x, y, z-up) -> three.js (x, y-up, -z), centred on the room
+const CEN = [34.3, 28.0, 18.0];
+const toV = p => new THREE.Vector3(p[0] - CEN[0], p[2] - CEN[2], -(p[1] - CEN[1]));
+controls.target.set(0, -2, 0);
+// Preset views (camera position relative to the room centre); OrbitControls handles free movement.
+const VIEWS = { reset: [95, 70, 115], top: [0.01, 170, 0.01], section: [0, 6, 135] };
+document.getElementById('viewbar').addEventListener('click', e => {
+  const v = VIEWS[e.target.dataset?.view];
+  if (!v) return;
+  camera.position.set(...v); controls.target.set(0, -2, 0); controls.update();
+});
+
+const LAYER_STYLE = {
+  concrete:     { color: 0x9aa1aa, opacity: 0.07, edge: 0.30 },
+  neck:         { color: 0x9aa1aa, opacity: 0.12, edge: 0.45 },
+  lime_plaster: { color: 0xe2d8c6, opacity: 0.05, edge: 0.22 },
+  absorbers:    { color: 0xe2d8c6, opacity: 0.05, edge: 0.22 },
+};
+let room = null, roomH = null;
+function buildRoom(geo) {
+  if (room) { scene.remove(room); room.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); }
+  room = new THREE.Group();
+  for (const [name, L] of Object.entries(geo.layers)) {
+    const q = int16(L.pos), pos = new Float32Array(q.length);
+    for (let i = 0; i < q.length; i += 3) {
+      const v = toV([q[i] * geo.scale, q[i + 1] * geo.scale, q[i + 2] * geo.scale]);
+      pos[i] = v.x; pos[i + 1] = v.y; pos[i + 2] = v.z;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setIndex(new THREE.BufferAttribute(L.wide ? uint32(L.idx) : uint16(L.idx), 1));
+    g.computeVertexNormals();
+    const st = LAYER_STYLE[name] ?? LAYER_STYLE.concrete;
+    const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: st.color, transparent: true, opacity: st.opacity,
+      side: THREE.DoubleSide, depthWrite: false, roughness: 0.95 }));
+    mesh.userData.layer = name;
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 28),
+      new THREE.LineBasicMaterial({ color: st.color, transparent: true, opacity: st.edge }));
+    edges.userData.layer = name;
+    room.add(mesh, edges);
+  }
+  scene.add(room);
+  styleAbsorbers();
+}
+function styleAbsorbers() {   // the curtain band shows only when it's on
+  room?.traverse(o => {
+    if (o.userData.layer !== 'absorbers') return;
+    const on = state.A !== 'A0';
+    o.material.color.set(on ? 0x55b3a6 : 0xe2d8c6);
+    o.material.opacity = o.isMesh ? (on ? 0.35 : 0.05) : (on ? 0.7 : 0.22);
+  });
+}
+
+// Markers
+const markers = {};
+for (const [id, m] of [...Object.entries(M.sources), ...Object.entries(M.listeners)]) {
+  const isSrc = id.startsWith('S');
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(isSrc ? 0.9 : 0.75, 20, 14),
+    new THREE.MeshBasicMaterial({ color: isSrc ? 0xffb066 : 0xf0efec, transparent: true }));
+  const div = document.createElement('div');
+  div.className = 'marker-label' + (isSrc ? ' src' : '');
+  div.textContent = `${id} · ${m.label}`;
+  if (!isSrc) div.addEventListener('click', () => { set({ listener: id }); if (!live) play(); });
+  mesh.add(new CSS2DObject(div));
+  mesh.userData.id = id;
+  scene.add(mesh);
+  markers[id] = { mesh, div };
+}
+function placeMarkers(run) {
+  run.sources.forEach((p, i) => markers[`S${i + 1}`]?.mesh.position.copy(toV(p)));
+  run.receivers.forEach((p, i) => markers[`L${i + 1}`]?.mesh.position.copy(toV(p)));
+  for (const [id, { mesh, div }] of Object.entries(markers)) {
+    if (id.startsWith('S')) { const on = id === state.source; mesh.material.opacity = on ? 1 : 0.3; div.classList.toggle('dim', !on); }
+    else { const on = id === state.listener; div.classList.toggle('sel', on); mesh.scale.setScalar(on ? 1.5 : 1); }
+  }
+}
+
+// ===================================================================================
+// Energy field: interior voxels light up when the sound reaches them (travel distance along
+// the room, through the neck) and then follow the measured decay of their room.
+// ===================================================================================
+const fieldMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uScale: { value: 1500 * renderer.getPixelRatio() } },
+  vertexShader: `
+    attribute float glow; uniform float uScale; varying float vG;
+    void main() {
+      vG = glow;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = uScale * (0.35 + 1.1 * glow) / -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `
+    varying float vG;
+    void main() {
+      float r = length(gl_PointCoord - 0.5);
+      if (r > 0.5 || vG < 0.01) discard;
+      float soft = smoothstep(0.5, 0.0, r);
+      vec3 low = vec3(0.13, 0.22, 0.48), mid = vec3(1.0, 0.62, 0.30), high = vec3(1.0, 0.95, 0.86);
+      vec3 col = mix(mix(low, mid, smoothstep(0.15, 0.6, vG)), high, smoothstep(0.75, 1.0, vG));
+      gl_FragColor = vec4(col * soft, soft * (0.05 + 0.55 * vG * vG));
+    }`,
+});
+let field = null;
+function buildField(geo) {
+  if (field) { scene.remove(field.points); field.points.geometry.dispose(); }
+  const V = geo.voxels, q = int16(V.pos), n = V.count;
+  const pos = new Float32Array(n * 3), z = new Float32Array(n);
+  const jit = rng(7), J = 0.35 * V.size;   // jitter breaks up the lattice so the field reads as a glow
+  for (let i = 0; i < n; i++) {
+    const p = [q[i * 3] * V.posScale + J * jit(), q[i * 3 + 1] * V.posScale + J * jit(), q[i * 3 + 2] * V.posScale + J * jit()];
+    const v = toV(p); pos.set([v.x, v.y, v.z], i * 3); z[i] = p[2];
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('glow', new THREE.BufferAttribute(new Float32Array(n), 1));
+  const dist = Object.fromEntries(Object.entries(V.dist).map(([k, s]) => [k, uint16(s)]));
+  field = { points: new THREE.Points(g, fieldMat), region: bytes(V.region), dist, distScale: V.distScale, z, n,
+    shown: new Float32Array(n) };
+  scene.add(field.points);
+}
+
+let env = null;   // per selected run + source: room envelopes and listener curves (dB re the loudest)
+function buildEnvelopes(run) {
+  const s = state.source;
+  const pit = levelDb(run, [`${s}-L1`, `${s}-L2`]), up = levelDb(run, [`${s}-L3`]);
+  const lis = Object.fromEntries(LIS.map((l, i) => [l, levelDb(run, [`${s}-L${i + 1}`])]));
+  // One reference for every run (same source power), so drier or quieter variants look drier and quieter.
+  let ref = M.level_ref;
+  if (ref == null) { ref = -Infinity; for (const a of [pit, up, ...Object.values(lis)]) for (const v of a) ref = Math.max(ref, v); }
+  env = { pit, up, lis, ref, bin: run.bin, n: run.nbins, T: run.nbins * run.bin };
+}
+const atT = (arr, t) => arr[Math.min(env.n - 1, Math.max(0, Math.floor(t / env.bin)))] - env.ref;
+
+const RANGE = 36, FRONT_W = 3.0;
+function updateField(t, dt) {
+  if (!field || !env) return;
+  const glow = field.points.geometry.attributes.glow, dist = field.dist[state.source];
+  const pitDb = atT(env.pit, t), upDb = atT(env.up, t), ease = 1 - Math.exp(-dt / 0.12);
+  for (let i = 0; i < field.n; i++) {
+    const d = dist[i] * field.distScale;
+    let db = -99;
+    if (C * t >= d - 2 * FRONT_W) {
+      const r = field.region[i];
+      const rev = r === 0 ? pitDb : r === 2 ? upDb
+        : pitDb + (upDb - pitDb) * Math.min(1, Math.max(0, (field.z[i] - 9.77) / (25.25 - 9.77)));
+      const front = 20 * Math.log10(12 / Math.max(d, 4)) + 10 * Math.log10(Math.exp(-(((C * t - d) / FRONT_W) ** 2)) + 1e-9) + 4;
+      db = Math.max(C * t >= d ? rev : -99, front);
+    }
+    const target = Math.min(1, Math.max(0, (db + RANGE) / RANGE));
+    field.shown[i] += (target - field.shown[i]) * ease;    // smooth in wall time: no flicker
+    glow.array[i] = field.shown[i];
+  }
+  glow.needsUpdate = true;
+}
+
+// ===================================================================================
+// Listener readouts and the time scale
+// ===================================================================================
+const TICKS = [0, 0.05, 0.1, 0.2, 1, 2, 3, 4, 5];
+function buildTimeline() {
+  const T = env.T, track = $('track');
+  track.querySelectorAll('.tick').forEach(e => e.remove());
+  for (const t of TICKS.filter(t => t <= T + 1e-6)) {
+    const el = document.createElement('div');
+    el.className = 'tick'; el.style.left = `${uOfT(t, T) * 100}%`; el.textContent = t === 0 ? '0' : fmtT(t);
+    track.appendChild(el);
+  }
+  $('slow').style.width = `${US * 100}%`;
+  $('slow').title = 'Slow motion';
+}
+$('cards').innerHTML = LIS.map(l => `
+  <div class="card" data-l="${l}">
+    <div class="head"><span><b>${l}</b> <span class="small">${M.listeners[l].label}</span></span><span class="now" id="now-${l}">–</span></div>
+    <canvas id="cv-${l}" width="460" height="128"></canvas>
+    <div class="final" id="fin-${l}"></div>
+  </div>`).join('');
+$('cards').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) set({ listener: c.dataset.l }); });
+
+function drawCards(u) {
+  if (!env) return;
+  const T = env.T, t = tOfU(u, T), done = u >= 1;
+  for (const l of LIS) {
+    const cv = $(`cv-${l}`), g = cv.getContext('2d'), W = cv.width, H = cv.height, pad = 4;
+    const y = db => pad + Math.min(1, -db / 60) * (H - 2 * pad);
+    g.clearRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1;
+    for (const db of [0, -20, -40, -60]) { g.beginPath(); g.moveTo(0, y(db)); g.lineTo(W, y(db)); g.stroke(); }
+    g.strokeStyle = 'rgba(109,167,236,.18)'; g.beginPath(); g.moveTo(US * W, 0); g.lineTo(US * W, H); g.stroke();
+    g.fillStyle = '#8b8a83'; g.font = '18px Inter, Segoe UI, sans-serif';
+    g.fillText('0 dB', W - 44, y(0) + 18); g.fillText('−60', W - 40, y(-60) - 4);
+    g.strokeStyle = '#6da7ec'; g.lineWidth = 3; g.beginPath();
+    let started = false;
+    for (let k = 0; k <= Math.round(u * 300); k++) {
+      const uk = k / 300, v = atT(env.lis[l], tOfU(uk, T));
+      if (v < -60) { started = false; continue; }
+      started ? g.lineTo(uk * W, y(v)) : g.moveTo(uk * W, y(v)); started = true;
+    }
+    g.stroke();
+    const now = atT(env.lis[l], t);
+    $(`now-${l}`).textContent = now > -70 ? `${now.toFixed(1)} dB` : '–';
+    document.querySelector(`.card[data-l="${l}"]`).classList.toggle('sel', l === state.listener);
+    $(`fin-${l}`).innerHTML = done ? finalText(l) : '<span class="small">settles at the end of the response…</span>';
+  }
+  $('done').style.width = `${u * 100}%`;
+  $('scrub').value = Math.round(u * 1000);
+  $('clock-t').textContent = fmtT(t);
+  const r = rate(u, T);
+  $('clock-speed').textContent = u >= 1 ? 'end of response' : r < 0.95 ? `slow motion ×${Math.round(1 / r)}` : 'real time';
+}
+let run = null, lowfreq = null;
+function finalText(l) {
+  const m = run.pairs[`${state.source}-${l}`].m, f = (v, d = 1) => (v == null ? '–' : v.toFixed(d));
+  let s = `RT ${f(m.t30, 2)} s · EDT ${f(m.edt, 2)} s<br>C80 ${fmtDb(m.c80)} · double slope ${f(m.bend, 2)}×`;
+  if (l === 'L2') {
+    const lv = k => run.pairs[`${state.source}-${k}`].m.level;
+    s += `<br>vs L1 ${fmtDb(lv('L2') - lv('L1'))} · vs L3 ${fmtDb(lv('L2') - lv('L3'))}`;
+  }
+  return s;
+}
+const fmtDb = v => (v == null ? '–' : (v < 0 ? '−' : '+') + Math.abs(v).toFixed(1) + ' dB');
+
+// ===================================================================================
+// Metrics panel
+// ===================================================================================
+const TARGETS = {
+  piano:        { RT: [1.5, 2.4, 0.2], C80: [-3, Infinity, 1] },
+  installation: { RT: [3.0, 4.0, 0.4], C80: [-8, Infinity, 2] },
+};
+const status = (v, [lo, hi, tol]) => (v == null ? 'info' : v >= lo && v <= hi ? 'pass' : v >= lo - tol && v <= hi + tol ? 'border' : 'fail');
+const row = (st, label, value, title = '') => `<i class="dot ${st}" title="${st}"></i><dt title="${title}">${label}</dt><dd>${value}</dd>`;
+const fmtInt = v => Math.round(v).toLocaleString('en-US');
+
+function renderMetrics() {
+  const s = state.source, m = l => run.pairs[`${s}-${l}`].m;
+  const avg = (k, ls) => { const v = ls.map(l => m(l)[k]).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b) / v.length : null; };
+  const mode = state.A === 'A0' ? 'installation' : 'piano', T = TARGETS[mode];
+  const wave = M.lowfreq?.[`${state.H}_${s}`];
+  const fmtS = v => (v == null ? '–' : `${v.toFixed(1)} s`);
+  const rtPit = avg('t30', ['L1', 'L2']), c80 = Math.min(m('L1').c80, m('L2').c80), bend = avg('bend', ['L1', 'L2']);
+  const edt = avg('edt', ['L1', 'L2']), edtGap = Math.abs(edt - rtPit) / rtPit;
+  const dsSt = bend == null ? 'info' : bend >= 1.3 ? 'pass' : bend >= 1.15 ? 'border' : 'fail';
+  const rt500 = ['L1', 'L2'].map(l => run.pairs[`${s}-${l}`].bands[3].t30).filter(Boolean);
+  const rt500Pit = rt500.length ? rt500.reduce((a, b) => a + b) / rt500.length : null;
+  const rt125 = wave?.rt_L2?.['125'], br = rt125 && rt500Pit ? rt125 / rt500Pit : null;
+  $('m-rev').innerHTML =
+    row(status(rtPit, T.RT), 'RT pit (T30)', `${rtPit.toFixed(2)} s`, `Target ${T.RT[0]}–${T.RT[1]} s`) +
+    row('info', 'RT upper room (T30)', `${m('L3').t30.toFixed(2)} s`, 'No target; for a double slope it should be clearly longer than the pit') +
+    row(edtGap <= 0.15 ? 'pass' : edtGap <= 0.3 ? 'border' : 'fail', 'EDT pit', `${edt.toFixed(2)} s`, 'Target: close to the RT (within 15%)') +
+    row(status(c80, T.C80), 'C80 pit (worst)', fmtDb(c80), `Target ≥ ${T.C80[0]} dB`) +
+    row(dsSt, 'Double slope (pit)', bend ? `${bend.toFixed(2)}×` : '–', 'Late/early decay slope; 1.3 or more is audible') +
+    (br ? row(status(br, [1.0, 1.2, 0.1]), 'Bass ratio (125 / 500 Hz)', `${br.toFixed(1)} (${fmtS(rt125)} / ${fmtS(rt500Pit)})`,
+              'RT at 125 Hz (wave simulation, bare walls) ÷ RT at 500 Hz (Pachyderm). Target 1.0–1.2')
+        : row('info', 'Bass ratio', 'needs wave sim'));
+  const lv = l => m(l).level, d1 = lv('L2') - lv('L1'), d3 = lv('L2') - lv('L3');
+  $('m-quiet').innerHTML =
+    row('info', 'L2 vs L1, 500 Hz–1 kHz', fmtDb(d1), 'No target: above about 250 Hz sound spreads evenly, so the quiet zone is judged at bass (below)') +
+    row('info', 'L2 vs L3, 500 Hz–1 kHz', fmtDb(d3)) +
+    (wave ? row(wave.deepest_db <= -6 ? 'pass' : wave.deepest_db <= -3 ? 'border' : 'fail', 'L2 deepest drop (bass)',
+              `${fmtDb(wave.deepest_db)} at ${Math.round(wave.deepest_hz)} Hz`, 'Wave simulation: L2 vs the pit average, 1/6-octave bands, 25–180 Hz') +
+            row(wave.deepest_vs_L1 <= -6 ? 'pass' : wave.deepest_vs_L1 <= -3 ? 'border' : 'fail', `L2 vs L1 at ${Math.round(wave.deepest_hz)} Hz`,
+              fmtDb(wave.deepest_vs_L1), 'Wave simulation, same band as the deepest drop') +
+            row('info', 'L2 quiet at', wave.quiet_bands_hz.length ? `${wave.quiet_bands_hz.map(f => Math.round(f)).join(', ')} Hz` : 'no band ≥ 6 dB',
+              'Bands where L2 is at least 6 dB below the pit average') +
+            row('info', 'L2 vs L3, 25–180 Hz', fmtDb(wave.L2_vs_L3))
+          : row('info', 'Drop-out frequencies', 'needs wave sim', 'Low-frequency nodes come from the wave simulation'));
+  const h = M.heights[state.H];
+  $('m-cost').innerHTML =
+    row('info', 'Pit height', `${h.pit_height} ft`) +
+    row('info', 'Pit volume', `${fmtInt(h.pit_volume)} ft³`) +
+    row('info', 'Finished pit wall', `${fmtInt(h.pit_wall_area)} ft²`) +
+    row('info', 'Cost index', `${h.cost_index} (H2 = 100)`, 'Half excavation volume, half finished wall area');
+  $('target-note').textContent = `Dots compare against ${mode} targets (${state.A === 'A0' ? 'curtains off' : 'curtains on'}).`;
+  const r = M.runs[runId()];
+  $('run-info').textContent = `${runId()} · ${M.heights[state.H].pit_height} ft pit, ${M.finishes[state.F]} plaster, curtain ${state.A === 'A0' ? 'off' : 'on'} · IR ${r.cutoff / 1000} s`;
+}
+
+// ===================================================================================
+// Controls
+// ===================================================================================
+function seg(id, items, key) {
+  const el = $(id);
+  el.innerHTML = items.map(([v, l, sub]) => `<button data-v="${v}">${l}${sub ? `<small>${sub}</small>` : ''}</button>`).join('');
+  el.addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) set({ [key]: b.dataset.v }); });
+  return () => el.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.v === state[key]);
+    if (['H', 'F', 'A'].includes(key)) {
+      b.disabled = !available(runId({ ...state, [key]: b.dataset.v }));
+      b.title = b.disabled ? 'Not simulated yet' : '';
+    }
+  });
+}
+const painters = [
+  seg('seg-H', ['H1', 'H2', 'H3'].map(h => [h, h, `${M.heights[h].pit_height} ft`]), 'H'),
+  seg('seg-F', Object.entries(M.finishes).map(([k, v]) => [k, k, v]), 'F'),
+  seg('seg-A', [['A0', 'Off'], ['A1', 'On', '25% of wall']], 'A'),
+  seg('seg-S', SRC.map(s => [s, s, M.sources[s].label]), 'source'),
+  seg('seg-clip', [['piano', 'Piano'], ['cello', 'Cello'], ['bass', 'Bass'], ['40Hz', '40 Hz']], 'clip'),
+  seg('seg-L', LIS.map(l => [l, l, M.listeners[l].label]), 'listener'),
+];
+$('dry').addEventListener('change', e => { state.dry = e.target.checked; });
+$('toggle').addEventListener('click', () => { if (state.u >= 1) state.u = 0; state.playing = !state.playing; paintClock(); });
+$('restart').addEventListener('click', () => { state.u = 0; state.playing = true; field?.shown.fill(0); paintClock(); });
+$('scrub').addEventListener('input', e => { state.u = +e.target.value / 1000; state.playing = false; paintClock(); });
+const paintClock = () => { $('toggle').textContent = state.playing ? '❚❚' : '▶'; };
+
+let loadToken = 0;
+async function set(patch) {
+  const prev = { ...state };
+  if (['H', 'F', 'A'].some(k => k in patch && patch[k] !== state[k]) && !available(runId({ ...state, ...patch }))) {
+    // keep the change, pick the nearest simulated combination for the other variables
+    const want = { ...state, ...patch };
+    const alt = Object.keys(M.runs).map(id => id.split('_')).find(([h, f, a]) => h === want.H && (f === want.F || a === want.A))
+      ?? Object.keys(M.runs).map(id => id.split('_')).find(([h]) => h === want.H);
+    if (!alt) return;
+    [patch.H, patch.F, patch.A] = alt;
+  }
+  Object.assign(state, patch);
+  painters.forEach(p => p());
+  $('play').textContent = live ? `■ Stop (${state.listener})` : `▶ Play at ${state.listener}`;
+  const runChanged = runId(prev) !== runId(state) || !run;
+  if (live) { if (runChanged || prev.source !== state.source) stopAudio(); else routeLive(); }
+  if (!runChanged && prev.source === state.source) { placeMarkers(run); if (!live) drawCards(state.u); return; }
+  const token = ++loadToken;
+  $('loading').style.display = 'block';
+  const [geo, r, low] = await Promise.all([getGeo(state.H), getRun(runId()), getLow(state.H)]);
+  if (token !== loadToken) return;
+  $('loading').style.display = 'none';
+  run = r; lowfreq = low;
+  if (roomH !== state.H) { buildRoom(geo); buildField(geo); roomH = state.H; }
+  styleAbsorbers();
+  buildEnvelopes(run);
+  buildTimeline();
+  placeMarkers(run);
+  renderMetrics();
+  state.u = 0; state.playing = true; field.shown.fill(0);
+  if (startU != null) { state.u = startU; state.playing = false; startU = null; }   // ?u=0..1 opens at that point
+  paintClock();
+  if (params.has('selftest')) selfTest();
+  if (params.has('listen') && !live) { state.clip = params.get('listen') || 'piano'; painters.forEach(p => p()); play(); }
+}
+function selfTest() {   // ?selftest: build every IR of the current run and log length and peak
+  ensureAudio();
+  for (const key of Object.keys(run.pairs)) {
+    const t0 = performance.now(), b = irFor(key), d = b.getChannelData(0);
+    let peak = 0, e = 0;
+    for (let i = 0; i < d.length; i++) { peak = Math.max(peak, Math.abs(d[i])); e += d[i] * d[i]; }
+    console.log(`selftest ${run.id} ${key}: ${(b.duration).toFixed(2)} s, peak ${peak.toFixed(3)}, energy ${(10 * Math.log10(e)).toFixed(1)} dB, ${Math.round(performance.now() - t0)} ms`);
+  }
+}
+let startU = params.has('u') ? Math.min(1, Math.max(0, +params.get('u'))) : null;
+
+// ===================================================================================
+// Audio: dry clip convolved with an IR built from the Pachyderm band envelopes; the tail
+// beyond the cut-off is extended with each band's fitted decay slope.
+// ===================================================================================
+let actx = null, master = null, current = null;
+const clipCache = {}, irCache = new Map();
+function ensureAudio() {
+  if (actx) return;
+  actx = new AudioContext();
+  const comp = actx.createDynamicsCompressor();
+  master = actx.createGain(); master.gain.value = 0.9;
+  master.connect(comp).connect(actx.destination);
+}
+function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 * 2 - 1; }; }
+
+function synthIR(r, key) {
+  const sr = actx.sampleRate, p = r.pairs[key], e = bandEnergy(r)[key], nb = r.nbins, T = nb * r.bin;
+  const perBin = r.bin * sr;
+  let ext = 0;
+  const lastE = e.map(eb => { let s = 0; for (let i = nb - 10; i < nb; i++) s += eb[i]; return s / 10; });
+  p.bands.forEach((b, i) => {
+    const drop = 10 * Math.log10(lastE[i] + 1e-30) - (b.top - 75);
+    if (drop > 0) ext = Math.max(ext, drop / -b.tail);
+  });
+  const n = Math.ceil(Math.min(12, T + ext) * sr), out = [new Float32Array(n), new Float32Array(n)];
+  const tmp = new Float32Array(n);
+  const low = lowBand(r, key, n, sr);      // wave simulation below ~177 Hz replaces the 62.5 and 125 Hz bands
+  out.forEach((ch, ci) => {
+    const rand = rng(1234 + ci * 7919 + key.length);
+    if (low) ch.set(low);
+    BANDS.forEach((fc, b) => {
+      if (fc > 0.45 * sr || (low && fc <= 125)) return;
+      const w0 = 2 * Math.PI * fc / sr, alpha = Math.sin(w0) / (2 * 1.414), a0 = 1 + alpha;
+      const b0 = alpha / a0, b2 = -alpha / a0, a1 = -2 * Math.cos(w0) / a0, a2 = (1 - alpha) / a0;
+      let x1 = 0, x2 = 0, y1 = 0, y2 = 0, ss = 0;
+      for (let i = 0; i < n; i++) {
+        const x = rand(), y = b0 * x + b2 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = x; y2 = y1; y1 = y; tmp[i] = y; ss += y * y;
+      }
+      const norm = 1 / Math.sqrt(ss / n), eb = e[b], tailStep = Math.pow(10, p.bands[b].tail / 10 / sr);
+      let tailE = lastE[b];
+      for (let i = 0; i < n; i++) {
+        const t = i / sr;
+        let E;
+        if (t < T) {
+          const x = t / r.bin - 0.5, i0 = Math.max(0, Math.floor(x)), f = Math.min(1, Math.max(0, x - i0));
+          E = eb[Math.min(nb - 1, i0)] * (1 - f) + eb[Math.min(nb - 1, i0 + 1)] * f;
+        } else { E = tailE; tailE *= tailStep; }
+        ch[i] += tmp[i] * norm * Math.sqrt(E / perBin);
+      }
+    });
+    const di = Math.round((p.direct.t ?? 0) * sr);
+    if (di > 0 && di < n) ch[di] += Math.sqrt(p.direct.e.reduce((a, v) => a + v, 0));
+  });
+  // One fixed gain for every run (levels stay comparable); puts the loudest IR near -3 dB total energy.
+  const gain = 0.017 / Math.sqrt(M.e_ref / perBin);
+  const buf = actx.createBuffer(2, n, sr);
+  out.forEach((ch, ci) => { for (let i = 0; i < n; i++) ch[i] *= gain; buf.copyToChannel(ch, ci); });
+  return buf;
+}
+// Low band from the wave simulation: upsampled, low-passed at 177 Hz (4th order), aligned to the
+// source time, and scaled so its 88-177 Hz energy matches Pachyderm's 125 Hz band. One scale per
+// source (geometric mean over L1-L3) keeps the simulated level differences between listeners.
+function lowBand(r, key, n, sr) {
+  if (!lowfreq) return null;
+  const sid = key.split('-')[0], irs = lowfreq.irs, fsl = lowfreq.fs;
+  if (!irs[key]) return null;
+  const e = bandEnergy(r);
+  let logScale = 0;
+  for (const l of LIS) {
+    const k = `${sid}-${l}`, ePach = e[k][1].reduce((a, v) => a + v, 0);
+    logScale += Math.log(Math.sqrt(ePach / (irs[k].e125 * sr / fsl))) / LIS.length;
+  }
+  const scale = Math.exp(logScale), src = int16(irs[key].q), peak = irs[key].peak;
+  const delay = 0, out = new Float32Array(n);      // simulation IRs are deconvolved: time origin = emission
+  for (let i = 0; i < n; i++) {
+    const x = (i / sr + delay) * fsl, i0 = Math.floor(x), f = x - i0;
+    if (i0 + 1 >= src.length) break;
+    out[i] = (src[i0] * (1 - f) + src[i0 + 1] * f) / 32767 * peak * scale;
+  }
+  for (let pass = 0; pass < 2; pass++) {                 // two Butterworth sections = LR4 low-pass
+    const w0 = 2 * Math.PI * 177 / sr, al = Math.sin(w0) / (2 * Math.SQRT1_2), cw = Math.cos(w0), a0 = 1 + al;
+    const b0 = (1 - cw) / 2 / a0, b1 = (1 - cw) / a0, a1 = -2 * cw / a0, a2 = (1 - al) / a0;
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < n; i++) { const x = out[i], y = b0 * x + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x; y2 = y1; y1 = y; out[i] = y; }
+  }
+  const end = Math.min(n, Math.floor((src.length / fsl - delay) * sr)), fade = Math.round(0.3 * sr);
+  for (let i = Math.max(0, end - fade); i < end; i++) out[i] *= (end - i) / fade;   // simulation ends at 6 s
+  for (let i = end; i < n; i++) out[i] = 0;
+  return out;
+}
+function irFor(key) {
+  const k = `${run.id}|${key}`;
+  if (!irCache.has(k)) {
+    irCache.set(k, synthIR(run, key));
+    if (irCache.size > 6) irCache.delete(irCache.keys().next().value);
+  }
+  return irCache.get(k);
+}
+
+async function clipBuffer(name) {
+  if (clipCache[name]) return clipCache[name];
+  for (const ext of ['wav', 'mp3']) {
+    try {
+      const res = await fetch(`audio/${name}.${ext}`);
+      if (!res.ok) continue;
+      clipCache[name] = await actx.decodeAudioData(await res.arrayBuffer());
+      $('audio-status').textContent = '';
+      return clipCache[name];
+    } catch { /* file:// or missing: fall back */ }
+  }
+  $('audio-status').textContent = `Using a built-in test sound. Put ${name}.wav in site/audio/ and open the site from a web server or GitHub Pages to use your recording.`;
+  return (clipCache[name] = testSound(name));
+}
+function testSound(name) {
+  const sr = actx.sampleRate, len = Math.round(6 * sr), buf = actx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  const rand = rng(99);
+  if (name === 'piano' || name === 'cello') {
+    [261.6, 329.6, 392, 523.3, 392, 329.6].forEach((f, k) => {
+      const N = Math.round(sr / f), line = Float32Array.from({ length: N }, () => rand()), s0 = Math.round(k * 0.45 * sr);
+      for (let i = 0; i < 2.5 * sr && s0 + i < len; i++) { const j = i % N, y = line[j]; line[j] = 0.997 * 0.5 * (y + line[(j + 1) % N]); d[s0 + i] += 0.35 * y; }
+    });
+  } else if (name === 'voice') {
+    for (let i = 0; i < 2.8 * sr; i++) {
+      const t = i / sr, f0 = 196 * (1 + 0.04 * Math.sin(2 * Math.PI * 5 * t));
+      let v = 0;
+      for (let hN = 1; hN < 30; hN++) {
+        const fh = hN * f0, amp = [700, 1220, 2600].reduce((a, F, k) => a + [1, 0.5, 0.25][k] / (1 + ((fh - F) / 90) ** 2), 0);
+        v += amp * Math.sin(2 * Math.PI * fh * t) / hN;
+      }
+      d[i] = 0.12 * v * Math.min(1, t * 8, (2.8 - t) * 8);
+    }
+  } else {
+    for (let k = 0; k < 8; k++) {
+      const s0 = Math.round((0.2 + k * 0.6) * sr);
+      let lp = 0;
+      for (let i = 0; i < 0.08 * sr; i++) { lp += 0.25 * (rand() - lp); d[s0 + i] += 0.9 * lp * Math.exp(-i / (0.012 * sr)); }
+    }
+  }
+  return buf;
+}
+// Listening mode: the clip runs through all three listeners' IRs at once. The selected one is
+// heard; all three (plus the dry source) are metered, and those levels drive the field and cards.
+let live = null, playToken = 0, preparing = false;
+async function play() {
+  const token = ++playToken;
+  stopAudio(false);
+  preparing = true;
+  $('play').textContent = 'Preparing… (click to cancel)';
+  ensureAudio(); await actx.resume();
+  const clip = await clipBuffer(state.clip);
+  if (token !== playToken) return;                       // cancelled or superseded while loading
+  const src = actx.createBufferSource(); src.buffer = clip;
+  const out = actx.createGain(); out.connect(master);    // every audible path goes through here, so Stop can mute it
+  const sink = actx.createGain(); sink.gain.value = 0; sink.connect(actx.destination);   // keeps meters running
+  const meter = node => { const a = actx.createAnalyser(); a.fftSize = 2048; node.connect(a); a.connect(sink); return a; };
+  const outs = {}, meters = { dry: meter(src) };
+  for (const l of LIS) {
+    const conv = actx.createConvolver(); conv.normalize = false; conv.buffer = irFor(`${state.source}-${l}`);
+    src.connect(conv);
+    outs[l] = conv; meters[l] = meter(conv);
+  }
+  preparing = false;
+  live = { src, out, outs, meters, sink, buf: new Float32Array(2048), level: { dry: -99, L1: -99, L2: -99, L3: -99 },
+    ref: -20, trace: Object.fromEntries(LIS.map(l => [l, []])), t0: actx.currentTime, dur: clip.duration, token };
+  routeLive();
+  src.start();
+  current = src;
+  field?.shown.fill(0);
+  $('play').textContent = `■ Stop (${state.listener})`;
+  // Keep metering through the reverb tail after the recording ends, then return to the IR view.
+  const tail = Math.min(12, outs[state.listener].buffer.duration);
+  src.onended = () => setTimeout(() => { if (live?.token === token) stopAudio(); }, tail * 1000);
+}
+function routeLive() {   // only the selected listener (or the dry clip) goes to the speakers
+  if (!live) return;
+  try { live.src.disconnect(live.out); } catch {}
+  for (const c of Object.values(live.outs)) { try { c.disconnect(live.out); } catch {} }
+  if (state.dry) live.src.connect(live.out); else live.outs[state.listener].connect(live.out);
+}
+function stopAudio(cancelPending = true) {
+  if (cancelPending) playToken++;
+  preparing = false;
+  if (live) {
+    const { src, out, sink } = live, now = actx.currentTime;
+    out.gain.cancelScheduledValues(now); out.gain.setValueAtTime(out.gain.value, now); out.gain.linearRampToValueAtTime(0, now + 0.05);
+    setTimeout(() => { try { src.stop(); } catch {} src.disconnect(); out.disconnect(); sink.disconnect(); }, 80);
+    live = null;
+    state.u = 1; state.playing = false; paintClock();
+  }
+  current = null;
+  $('play').textContent = `▶ Play at ${state.listener}`;
+}
+$('play').addEventListener('click', () => (current || preparing ? stopAudio() : play()));
+$('dry').addEventListener('change', () => routeLive());
+
+const rmsDb = (an, buf) => { an.getFloatTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return 10 * Math.log10(s / buf.length + 1e-12); };
+function updateLive(dt) {
+  const L = live.level, ease = 1 - Math.exp(-dt / 0.06);
+  for (const k of ['dry', ...LIS]) L[k] += (rmsDb(live.meters[k], live.buf) - L[k]) * ease;
+  live.ref = Math.max(live.ref - 1.5 * dt, L.L1, L.L2, L.L3, L.dry - 6);   // slow auto-range: loudest ≈ 0 dB
+  for (const l of LIS) { live.trace[l].push(L[l] - live.ref); if (live.trace[l].length > 360) live.trace[l].shift(); }
+  if (!field) return;
+  const glow = field.points.geometry.attributes.glow, dist = field.dist[state.source];
+  const pit = 10 * Math.log10((10 ** (L.L1 / 10) + 10 ** (L.L2 / 10)) / 2) - live.ref, up = L.L3 - live.ref;
+  const dry = L.dry - live.ref, fe = 1 - Math.exp(-dt / 0.08);
+  for (let i = 0; i < field.n; i++) {
+    const r = field.region[i], d = dist[i] * field.distScale;
+    const room = r === 0 ? pit : r === 2 ? up : pit + (up - pit) * Math.min(1, Math.max(0, (field.z[i] - 9.77) / (25.25 - 9.77)));
+    const near = dry - 20 * Math.log10(Math.max(d, 4) / 10) - 3;    // brighter glow spreading from the source as notes sound
+    const target = Math.min(1, Math.max(0, (Math.max(room, near) + RANGE) / RANGE));
+    field.shown[i] += (target - field.shown[i]) * fe;
+    glow.array[i] = field.shown[i];
+  }
+  glow.needsUpdate = true;
+}
+function drawLiveCards() {
+  for (const l of LIS) {
+    const cv = $(`cv-${l}`), g = cv.getContext('2d'), W = cv.width, H = cv.height, pad = 4;
+    const y = db => pad + Math.min(1, -db / 60) * (H - 2 * pad);
+    g.clearRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1;
+    for (const db of [0, -20, -40, -60]) { g.beginPath(); g.moveTo(0, y(db)); g.lineTo(W, y(db)); g.stroke(); }
+    g.fillStyle = '#8b8a83'; g.font = '18px Inter, Segoe UI, sans-serif';
+    g.fillText('0 dB', W - 44, y(0) + 18); g.fillText('−60', W - 40, y(-60) - 4); g.fillText('last 6 s', 4, y(-60) - 4);
+    const tr = live.trace[l];
+    g.strokeStyle = l === state.listener ? '#ffb066' : '#6da7ec'; g.lineWidth = 3; g.beginPath();
+    tr.forEach((v, k) => { const x = W - (tr.length - 1 - k) * (W / 360); k ? g.lineTo(x, y(v)) : g.moveTo(x, y(v)); });
+    g.stroke();
+    const now = live.level[l] - live.ref;
+    $(`now-${l}`).textContent = now > -70 ? `${now.toFixed(1)} dB` : '–';
+    document.querySelector(`.card[data-l="${l}"]`).classList.toggle('sel', l === state.listener);
+    $(`fin-${l}`).innerHTML = l === state.listener ? `<span class="small">${state.dry ? 'dry recording playing' : 'you are hearing this position'}</span>`
+      : '<span class="small">metered, not heard</span>';
+  }
+  const t = actx.currentTime - live.t0;
+  $('clock-t').textContent = `${t.toFixed(1)} s`;
+  $('clock-speed').textContent = `live · ${state.clip} at ${state.listener}`;
+  $('done').style.width = `${Math.min(1, t / live.dur) * 100}%`;
+}
+
+// ===================================================================================
+// Loop
+// ===================================================================================
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight);
+});
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  $('track').classList.toggle('live', !!live);
+  if (live) {
+    updateLive(dt);
+    drawLiveCards();
+  } else if (env) {
+    if (state.playing) { state.u = Math.min(1, state.u + dt / DURATION); if (state.u >= 1) { state.playing = false; paintClock(); } }
+    updateField(tOfU(state.u, env.T), dt);
+    drawCards(state.u);
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+});
+set({});
+</script>
+</body>
+</html>
